@@ -33,7 +33,7 @@ namespace FutharkData {
     ///
     /// A value of a pair of the type of the value and its representation as a byte array.
     ///
-    opaque enum Value with ToString, Eq, Order { case Value(ValueType, Bytes) }
+    opaque pub enum Value with ToString, Eq, Order { case Value(ValueType, Bytes) }
 
     ///
     /// The type of a value.
@@ -76,9 +76,15 @@ namespace FutharkData {
     pub def valueElemType(v: Value): ElemType =
         snd(valueType(v))
 
+    ///
+    /// The shape of a value.
+    ///
     pub def valueShape(v: Value): Shape =
         fst(valueType(v))
 
+    ///
+    /// The raw byte representation of the elements of a value.
+    ///
     pub def valueBytes(v: Value): Bytes =
         let Value.Value(_, bs) = v;
         bs
@@ -127,10 +133,28 @@ namespace FutharkData {
             case ElemType.Bool => Vector#{98i8,111i8,111i8,108i8}
         }
 
-    pub def shapeFromBytes(bytes: Vector[Int8]): Shape & r =
+    def shapeFromBytes(bytes: Bytes): Shape =
         if (Vector.length(bytes) == 0) Nil
         else (Vector.take(8,bytes) |> Vector.foldRight((d,acc) -> acc*256i64 + Int8.toInt64(d), 0i64))
              :: shapeFromBytes(Vector.drop(8,bytes))
+
+    def shapeToBytes(shape: Shape): Bytes =
+        region r {
+            let arr = Array.new(r, List.length(shape)*8);
+            let byte = (x,b) ->
+                Int64.clampToInt8(min=-128i8,max=127i8,Int64.logicalRightShift(dist=b*8,x));
+            let onDim = (i,x) ->
+                {Array.put(byte(x,0), i*8+0, arr);
+                 Array.put(byte(x,1), i*8+1, arr);
+                 Array.put(byte(x,2), i*8+2, arr);
+                 Array.put(byte(x,3), i*8+3, arr);
+                 Array.put(byte(x,4), i*8+4, arr);
+                 Array.put(byte(x,5), i*8+5, arr);
+                 Array.put(byte(x,6), i*8+6, arr);
+                 Array.put(byte(x,7), i*8+7, arr)};
+            List.forEachWithIndex(onDim, shape);
+            Array.toVector(arr)
+        }
 
     ///
     /// Read a value from the provided byte array.
@@ -157,12 +181,18 @@ namespace FutharkData {
     pub def valueToBytes(v: Value) : Vector[Int8] =
         let shape = valueShape(v);
         let num_dims = Int32.clampToInt8({min=Int8.minValue()}, {max=Int8.maxValue()}, List.length(shape));
-        Vector.append(Vector#{98i8,2i8,num_dims}, elemTypeToBytes(valueElemType(v)))
+        Vector.append(
+            Vector.append(
+                Vector.append(
+                    Vector#{98i8,2i8,num_dims},
+                    elemTypeToBytes(valueElemType(v))),
+                shapeToBytes(shape)),
+            valueBytes(v))
 
     ///
     /// Read single Futhark value from file.
     ///
-    pub def valuesFromFile(f: String): Result[String,Value] & Impure =
+    pub def valueFromFile(f: String): Result[String,Value] & Impure =
         region r { 
             Result.flatMap(Array.toVector >> valueFromBytes, File.readBytes(r, f))
         }
