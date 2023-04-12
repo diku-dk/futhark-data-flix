@@ -1,0 +1,6 @@
+[package]
+name        = "futhark-data"
+description = "Implementation of the Futhark binary data format"
+version     = "0.1.0"
+flix        = "0.35.0"
+authors     = ["Troels Henriksen <athas@sigkill.dk>"]

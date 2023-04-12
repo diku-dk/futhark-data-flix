@@ -5,7 +5,7 @@ namespace FutharkData {
     pub type alias Shape = List[Int64]
     
     /// The element type.
-    pub enum ElemType with ToString {
+    pub enum ElemType with ToString, Eq, Order {
         case I8
         case I16
         case I32
@@ -33,7 +33,7 @@ namespace FutharkData {
     ///
     /// A value of a pair of the type of the value and its representation as a byte array.
     ///
-    opaque enum Value with ToString { case Value(ValueType, Bytes) }
+    opaque enum Value with ToString, Eq, Order { case Value(ValueType, Bytes) }
 
     ///
     /// The type of a value.
@@ -87,8 +87,10 @@ namespace FutharkData {
     /// Construct a value from a type and its representation as bytes.  Returns Some if this is a valid value.
     ///
     pub def mkValue(t: ValueType, bs: Bytes): Result[String,Value] =
-        if (valueTypeSize(t) == Int32.toInt64(Vector.length(bs))) Ok(Value.Value(t, bs))
-        else Err("Not enough bytes.")
+        let expected = valueTypeSize(t);
+        let got = Int32.toInt64(Vector.length(bs));
+        if (expected == got) Ok(Value.Value(t, bs))
+        else Err("mkValue: expected ${expected} bytes, but only got ${got}.")
 
     def byteString(c: Int8): String = Char.toString(Char.fromInt32(Int8.toInt32(c)))
 
@@ -127,11 +129,11 @@ namespace FutharkData {
 
     pub def shapeFromBytes(bytes: Vector[Int8]): Shape & r =
         if (Vector.length(bytes) == 0) Nil
-        else (Vector.take(8,bytes) |> Vector.foldLeft((acc, d) -> acc*256i64 + Int8.toInt64(d), 0i64))
+        else (Vector.take(8,bytes) |> Vector.foldRight((d,acc) -> acc*256i64 + Int8.toInt64(d), 0i64))
              :: shapeFromBytes(Vector.drop(8,bytes))
 
     ///
-    /// Read a value from the provides byte array.  Note that we allow unused bytes to follow the value.
+    /// Read a value from the provided byte array.
     ///
     pub def valueFromBytes(bytes: Vector[Int8]): Result[String,Value] =
         match Vector.toList(Vector.slice(start=0,end=7,bytes)) {
@@ -141,11 +143,11 @@ namespace FutharkData {
                         let num_dims32 = Int8.toInt32(num_dims);
                         let shape = shapeFromBytes(Vector.slice(start=7, end=7+num_dims32*8, bytes));
                         let vt = (shape,et);
-                        mkValue(vt,Vector.slice(start=7+num_dims32*8, end=7+num_dims32*8, bytes))
-                    case None => Err("Invalid type.")
+                        mkValue(vt,Vector.drop(7+num_dims32*8, bytes))
+                    case None => Err("valueFromBytes: Invalid type.")
                 }
             case _ => {
-                Err("Invalid header length")
+                Err("valueFromBytes: Invalid header")
             }
         }
 
